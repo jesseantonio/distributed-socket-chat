@@ -12,7 +12,6 @@ public class ChatSession {
     private static final String LIST_COMMAND = "/list";
     private static final String PRIVATE_MSG_COMMAND = "/msg";
 
-    /** Uma thread dessas por par conectado: fica escutando o que aquele par manda. */
     public static void receiveLoop(PeerConnection peer, PeerTable table) {
         try {
             while (true) {
@@ -20,7 +19,6 @@ public class ChatSession {
                 try {
                     frame = Frames.read(peer.in);
                 } catch (SocketTimeoutException e) {
-                    // ninguém mandou nada dentro do prazo; o par pode só estar quieto, tenta de novo
                     continue;
                 }
                 if (frame == null) {
@@ -29,7 +27,6 @@ public class ChatSession {
                 System.out.println(peer.nickname + ": " + new String(frame, StandardCharsets.UTF_8));
             }
         } catch (IOException e) {
-            // conexão caiu de verdade; tratado abaixo como se o par tivesse saído
         }
 
         table.remove(peer.nickname);
@@ -37,7 +34,6 @@ public class ChatSession {
         peer.close();
     }
 
-    /** Só uma thread dessas no processo inteiro: lê o teclado e manda pra todo mundo. */
     public static void consoleLoop(PeerTable table, String myNickname) {
         System.out.println("Você é '" + myNickname + "'. Digite uma mensagem e pressione Enter.");
         System.out.println("Comandos: " + LIST_COMMAND + " (participantes), " + PRIVATE_MSG_COMMAND
@@ -77,12 +73,11 @@ public class ChatSession {
 
     private static boolean isPrivateMessageCommand(String line) {
         int len = PRIVATE_MSG_COMMAND.length();
-        // "/msg" sozinho ou seguido de espaço conta; "/msgalguemdigitou" não é o comando, é texto normal
+
         return line.regionMatches(true, 0, PRIVATE_MSG_COMMAND, 0, len)
                 && (line.length() == len || line.charAt(len) == ' ');
     }
 
-    /** Trata "/msg apelido texto": entrega só pro destinatário, não pro resto da malha. */
     private static void privateMessage(PeerTable table, String line) {
         String rest = line.substring(PRIVATE_MSG_COMMAND.length()).trim();
         int spaceIndex = rest.indexOf(' ');

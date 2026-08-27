@@ -33,7 +33,6 @@ public class Main {
         }
     }
 
-    /** Fica aceitando conexões de novos pares o processo inteiro, uma por vez. */
     private static void startAcceptorThread(ServerSocket server, String myNickname, PeerTable table) {
         Thread acceptor = new Thread(() -> {
             while (true) {
@@ -41,15 +40,12 @@ public class Main {
                 try {
                     socket = server.accept();
                 } catch (SocketTimeoutException e) {
-                    // ninguém tentou conectar dentro do prazo; segue esperando
                     continue;
                 } catch (IOException e) {
-                    // a própria porta de escuta caiu; não tem mais o que aceitar
                     break;
                 }
 
-                // uma conexão aceita com handshake ruim (ou lento demais) não pode impedir
-                // que a gente continue aceitando as próximas — por isso esse try é separado
+                // handshake ruim de uma conexão não pode travar as próximas
                 try {
                     registerPeer(socket, myNickname, table, "[%s entrou na conversa]");
                 } catch (IOException e) {
@@ -79,7 +75,6 @@ public class Main {
         }
     }
 
-    /** Completa o handshake, registra o par na tabela e sobe a thread que escuta ele. */
     private static void registerPeer(Socket socket, String myNickname, PeerTable table, String announceFormat) throws IOException {
         PeerConnection peer = PeerConnection.handshake(socket, myNickname);
         table.add(peer);

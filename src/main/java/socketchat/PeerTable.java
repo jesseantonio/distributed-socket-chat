@@ -5,7 +5,6 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Registro dos pares atualmente conectados. Acessado por várias threads ao mesmo tempo. */
 public class PeerTable {
 
     private final Map<String, PeerConnection> peers = new LinkedHashMap<>();

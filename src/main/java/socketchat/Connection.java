@@ -10,7 +10,6 @@ public class Connection {
     private static final int CONNECT_TIMEOUT_MS = 10_000;
     private static final int ACCEPT_TIMEOUT_MS = 2_000;
 
-    /** Abre a porta de escuta. Quem chamar decide quantas conexões aceitar e quando. */
     public static ServerSocket openServer(int port) throws IOException {
         ServerSocket server = new ServerSocket(port);
         server.setSoTimeout(ACCEPT_TIMEOUT_MS);
