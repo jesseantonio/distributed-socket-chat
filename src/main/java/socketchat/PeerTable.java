@@ -21,4 +21,8 @@ public class PeerTable {
     public synchronized Collection<PeerConnection> all() {
         return new ArrayList<>(peers.values());
     }
+
+    public synchronized PeerConnection find(String nickname) {
+        return peers.get(nickname);
+    }
 }

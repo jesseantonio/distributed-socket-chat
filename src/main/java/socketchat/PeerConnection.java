@@ -31,7 +31,11 @@ public class PeerConnection {
         DataInputStream in = new DataInputStream(socket.getInputStream());
         DataOutputStream out = new DataOutputStream(socket.getOutputStream());
 
-        Frames.write(out, myNickname.getBytes(StandardCharsets.UTF_8));
+        byte[] myNicknameBytes = myNickname.getBytes(StandardCharsets.UTF_8);
+        if (writeWithTimeout(socket, out, myNicknameBytes, HANDSHAKE_TIMEOUT_MS)) {
+            throw new IOException("Tempo esgotado mandando o apelido no handshake.");
+        }
+
         byte[] frame = Frames.read(in);
         if (frame == null) {
             throw new IOException("O par desconectou durante o handshake.");
@@ -45,14 +49,24 @@ public class PeerConnection {
     }
 
     /**
-     * Manda um frame pra esse par com prazo. Socket normal do Java não tem timeout de escrita
-     * embutido (só de leitura), então a escrita roda numa thread à parte: se não terminar dentro
-     * do prazo, é sinal de que esse par parou de consumir (buffer TCP dele está cheio e não
-     * esvazia) — nesse caso fechamos a conexão em vez de deixar quem está mandando mensagem
-     * travado esperando. Fechar aqui faz a receiveLoop desse par perceber a queda e cuidar da
-     * remoção/anúncio normalmente, do mesmo jeito que qualquer outra desconexão.
+     * Manda um frame pra esse par com prazo. Se travar (par parou de consumir), fecha a conexão
+     * em vez de deixar quem está mandando mensagem travado esperando — a receiveLoop desse par
+     * percebe a queda e cuida da remoção/anúncio normalmente, do mesmo jeito que qualquer outra
+     * desconexão.
      */
     public void send(byte[] payload) {
+        if (writeWithTimeout(socket, out, payload, WRITE_TIMEOUT_MS)) {
+            System.out.println("[" + nickname + " não está consumindo mensagens; desconectando]");
+        }
+    }
+
+    /**
+     * Socket normal do Java não tem timeout de escrita embutido (só de leitura), então a escrita
+     * roda numa thread à parte: se não terminar dentro do prazo, o socket é fechado à força (o
+     * que também destrava a thread de escrita, já que ela vai falhar ao tentar escrever num
+     * socket fechado). Retorna true se deu timeout.
+     */
+    private static boolean writeWithTimeout(Socket socket, DataOutputStream out, byte[] payload, long timeoutMs) {
         Thread writer = new Thread(() -> {
             try {
                 Frames.write(out, payload);
@@ -64,15 +78,19 @@ public class PeerConnection {
         writer.start();
 
         try {
-            writer.join(WRITE_TIMEOUT_MS);
+            writer.join(timeoutMs);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
 
-        if (writer.isAlive()) {
-            System.out.println("[" + nickname + " não está consumindo mensagens; desconectando]");
-            close();
+        boolean timedOut = writer.isAlive();
+        if (timedOut) {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+            }
         }
+        return timedOut;
     }
 
     public void close() {

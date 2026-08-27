@@ -17,7 +17,12 @@ public class PeerAddress {
         }
 
         String host = text.substring(0, i);
-        int port = Integer.parseInt(text.substring(i + 1));
+        int port;
+        try {
+            port = Integer.parseInt(text.substring(i + 1));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Endereço de par inválido: '" + text + "'. Formato esperado: host:porta.");
+        }
         return new PeerAddress(host, port);
     }
 

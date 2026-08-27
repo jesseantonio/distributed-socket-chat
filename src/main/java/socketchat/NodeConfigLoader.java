@@ -26,7 +26,7 @@ public class NodeConfigLoader {
             throw new IllegalArgumentException("Faltando --port ou --nick (ou use --config <arquivo>).");
         }
 
-        return new NodeConfig(Integer.parseInt(portText), nickname, parsePeers(peersText));
+        return new NodeConfig(parsePort(portText), nickname, parsePeers(peersText));
     }
 
     private static NodeConfig loadFromFile(String path) throws IOException {
@@ -41,7 +41,15 @@ public class NodeConfigLoader {
             throw new IllegalArgumentException("O arquivo de configuração precisa das chaves 'port' e 'nick'.");
         }
 
-        return new NodeConfig(Integer.parseInt(portText), nickname, parsePeers(props.getProperty("peers")));
+        return new NodeConfig(parsePort(portText), nickname, parsePeers(props.getProperty("peers")));
+    }
+
+    private static int parsePort(String text) {
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Porta inválida: '" + text + "'.");
+        }
     }
 
     private static List<PeerAddress> parsePeers(String text) {

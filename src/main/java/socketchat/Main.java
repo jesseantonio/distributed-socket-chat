@@ -51,13 +51,7 @@ public class Main {
                 // uma conexão aceita com handshake ruim (ou lento demais) não pode impedir
                 // que a gente continue aceitando as próximas — por isso esse try é separado
                 try {
-                    PeerConnection peer = PeerConnection.handshake(socket, myNickname);
-                    table.add(peer);
-                    System.out.println("[" + peer.nickname + " entrou na conversa]");
-
-                    Thread receiver = new Thread(() -> ChatSession.receiveLoop(peer, table));
-                    receiver.setDaemon(true);
-                    receiver.start();
+                    registerPeer(socket, myNickname, table, "[%s entrou na conversa]");
                 } catch (IOException e) {
                     System.out.println("[conexão recusada: handshake falhou - " + e.getMessage() + "]");
                     closeQuietly(socket);
@@ -78,17 +72,22 @@ public class Main {
         }
 
         try {
-            PeerConnection peer = PeerConnection.handshake(socket, myNickname);
-            table.add(peer);
-            System.out.println("[conectado a " + peer.nickname + "]");
-
-            Thread receiver = new Thread(() -> ChatSession.receiveLoop(peer, table));
-            receiver.setDaemon(true);
-            receiver.start();
+            registerPeer(socket, myNickname, table, "[conectado a %s]");
         } catch (IOException e) {
             System.out.println("[não foi possível conectar a " + address + ": " + e.getMessage() + "]");
             closeQuietly(socket);
         }
+    }
+
+    /** Completa o handshake, registra o par na tabela e sobe a thread que escuta ele. */
+    private static void registerPeer(Socket socket, String myNickname, PeerTable table, String announceFormat) throws IOException {
+        PeerConnection peer = PeerConnection.handshake(socket, myNickname);
+        table.add(peer);
+        System.out.println(String.format(announceFormat, peer.nickname));
+
+        Thread receiver = new Thread(() -> ChatSession.receiveLoop(peer, table));
+        receiver.setDaemon(true);
+        receiver.start();
     }
 
     private static void closeQuietly(Socket socket) {
