@@ -2,95 +2,69 @@ package socketchat;
 
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.CountDownLatch;
 
-public final class ChatSession {
+public class ChatSession {
 
     private static final String QUIT_COMMAND = "/quit";
 
-    private ChatSession() {
-    }
-
-    public static void run(Socket socket, String name) {
-        System.out.println("Connected to " + socket.getRemoteSocketAddress() + ".");
-        System.out.println("You are '" + name + "'. Type a message and press Enter. Type " + QUIT_COMMAND + " to leave.");
-        System.out.println();
-
-        CountDownLatch done = new CountDownLatch(1);
-
-        Thread receiver = new Thread(() -> receiveLoop(socket, done), "chat-receive");
-        Thread sender = new Thread(() -> sendLoop(socket, name, done), "chat-send");
-        receiver.setDaemon(true);
-        sender.setDaemon(true);
-        receiver.start();
-        sender.start();
-
+    /** Uma thread dessas por par conectado: fica escutando o que aquele par manda. */
+    public static void receiveLoop(PeerConnection peer, PeerTable table) {
         try {
-            done.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-
-        try {
-            socket.shutdownInput();
-        } catch (IOException ignored) {
-        }
-        try {
-            socket.shutdownOutput();
-        } catch (IOException ignored) {
-        }
-
-        System.out.println("Session closed.");
-    }
-
-    private static void receiveLoop(Socket socket, CountDownLatch done) {
-        try {
-            InputStream in = socket.getInputStream();
             while (true) {
-                byte[] frame = Frames.read(in);
-                if (frame == null) {
-                    System.out.println("[peer left the conversation]");
-                    return;
-                }
-                System.out.println(new String(frame, StandardCharsets.UTF_8));
-            }
-        } catch (IOException e) {
-            if (!socket.isClosed()) {
-                System.err.println("[receive failed: " + e.getClass().getSimpleName() + " - " + e.getMessage() + "]");
-            }
-        } finally {
-            done.countDown();
-        }
-    }
-
-    private static void sendLoop(Socket socket, String name, CountDownLatch done) {
-        try {
-            OutputStream out = socket.getOutputStream();
-            BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-            while (true) {
-                String line = stdin.readLine();
-
-                if (line == null || line.equalsIgnoreCase(QUIT_COMMAND)) {
-                    return;
-                }
-                if (line.isEmpty()) {
+                byte[] frame;
+                try {
+                    frame = Frames.read(peer.in);
+                } catch (SocketTimeoutException e) {
+                    // ninguém mandou nada dentro do prazo; o par pode só estar quieto, tenta de novo
                     continue;
                 }
-
-                byte[] payload = (name + ": " + line).getBytes(StandardCharsets.UTF_8);
-                Frames.write(out, payload);
+                if (frame == null) {
+                    break;
+                }
+                System.out.println(peer.nickname + ": " + new String(frame, StandardCharsets.UTF_8));
             }
         } catch (IOException e) {
-            if (!socket.isClosed()) {
-                System.err.println("[send failed: " + e.getClass().getSimpleName() + " - " + e.getMessage() + "]");
+            // conexão caiu de verdade; tratado abaixo como se o par tivesse saído
+        }
+
+        table.remove(peer.nickname);
+        System.out.println("[" + peer.nickname + " saiu da conversa]");
+        peer.close();
+    }
+
+    /** Só uma thread dessas no processo inteiro: lê o teclado e manda pra todo mundo. */
+    public static void consoleLoop(PeerTable table, String myNickname) {
+        System.out.println("Você é '" + myNickname + "'. Digite uma mensagem e pressione Enter. Digite " + QUIT_COMMAND + " para sair.");
+        System.out.println();
+
+        try {
+            BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+            String line;
+            while ((line = stdin.readLine()) != null) {
+                if (line.equalsIgnoreCase(QUIT_COMMAND)) {
+                    break;
+                }
+                if (!line.isEmpty()) {
+                    broadcast(table, line);
+                }
             }
-        } finally {
-            done.countDown();
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static void broadcast(PeerTable table, String line) {
+        byte[] payload = line.getBytes(StandardCharsets.UTF_8);
+
+        if (payload.length > Frames.MAX_MESSAGE_SIZE) {
+            System.out.println("[mensagem não enviada: " + payload.length + " bytes excede o limite de " + Frames.MAX_MESSAGE_SIZE + " bytes]");
+            return;
+        }
+
+        for (PeerConnection peer : table.all()) {
+            peer.send(payload);
         }
     }
 }

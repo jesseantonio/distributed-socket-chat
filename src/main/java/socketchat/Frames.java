@@ -1,78 +1,51 @@
 package socketchat;
 
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.net.SocketTimeoutException;
 
-/** Length-prefixed message framing: a 4-byte big-endian size header followed by the payload. */
-public final class Frames {
+/** Messages on the wire are a 4-byte length prefix followed by that many bytes of payload. */
+public class Frames {
 
-    public static final int MAX_FRAME_SIZE = 64 * 1024;
+    public static final int MAX_MESSAGE_SIZE = 64 * 1024;
 
-    private Frames() {
-    }
-
-    public static void write(OutputStream out, byte[] payload) throws IOException {
-        if (payload.length > MAX_FRAME_SIZE) {
-            throw new IllegalArgumentException("Payload of " + payload.length + " bytes exceeds the limit.");
+    public static void write(DataOutputStream out, byte[] payload) throws IOException {
+        if (payload.length > MAX_MESSAGE_SIZE) {
+            throw new IOException("Mensagem de " + payload.length + " bytes excede o limite de " + MAX_MESSAGE_SIZE + " bytes.");
         }
 
-        byte[] header = new byte[4];
-        writeInt32BigEndian(header, payload.length);
-
-        out.write(header);
+        out.writeInt(payload.length);
         out.write(payload);
         out.flush();
     }
 
-    /** Returns null when the peer disconnects cleanly at a frame boundary. */
-    public static byte[] read(InputStream in) throws IOException {
-        byte[] header = new byte[4];
-        if (!readExactly(in, header)) {
+    /**
+     * Returns null quando o par fechou a conexão de forma limpa. Lança SocketTimeoutException
+     * se o prazo de leitura esgotar antes de uma mensagem nova começar a chegar — nesse caso
+     * não perdemos nenhum byte, então é seguro o chamador tentar ler de novo mais tarde. Se o
+     * prazo esgotar no meio de uma mensagem já iniciada, isso vira uma IOException comum, porque
+     * aí sim já não dá mais pra confiar que os próximos bytes vão ser um novo prefixo de tamanho.
+     */
+    public static byte[] read(DataInputStream in) throws IOException {
+        int size;
+        try {
+            size = in.readInt();
+        } catch (EOFException e) {
             return null;
         }
 
-        int size = readInt32BigEndian(header);
-        if (size < 0 || size > MAX_FRAME_SIZE) {
-            throw new IOException("Invalid frame size: " + size);
-        }
-
-        if (size == 0) {
-            return new byte[0];
+        if (size < 0 || size > MAX_MESSAGE_SIZE) {
+            throw new IOException("Invalid message size: " + size);
         }
 
         byte[] payload = new byte[size];
-        if (!readExactly(in, payload)) {
-            throw new EOFException("Connection closed in the middle of a frame.");
+        try {
+            in.readFully(payload);
+        } catch (SocketTimeoutException e) {
+            throw new IOException("Tempo esgotado no meio de uma mensagem.", e);
         }
-
         return payload;
-    }
-
-    private static boolean readExactly(InputStream in, byte[] destination) throws IOException {
-        int read = 0;
-        while (read < destination.length) {
-            int n = in.read(destination, read, destination.length - read);
-            if (n < 0) {
-                if (read == 0) {
-                    return false;
-                }
-                throw new EOFException("Missing " + (destination.length - read) + " bytes of the frame.");
-            }
-            read += n;
-        }
-        return true;
-    }
-
-    private static void writeInt32BigEndian(byte[] dest, int value) {
-        dest[0] = (byte) (value >>> 24);
-        dest[1] = (byte) (value >>> 16);
-        dest[2] = (byte) (value >>> 8);
-        dest[3] = (byte) value;
-    }
-
-    private static int readInt32BigEndian(byte[] src) {
-        return ((src[0] & 0xFF) << 24) | ((src[1] & 0xFF) << 16) | ((src[2] & 0xFF) << 8) | (src[3] & 0xFF);
     }
 }
