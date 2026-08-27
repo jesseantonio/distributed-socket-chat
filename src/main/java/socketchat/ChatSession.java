@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 public class ChatSession {
 
     private static final String QUIT_COMMAND = "/quit";
+    private static final String LIST_COMMAND = "/list";
 
     /** Uma thread dessas por par conectado: fica escutando o que aquele par manda. */
     public static void receiveLoop(PeerConnection peer, PeerTable table) {
@@ -37,7 +38,8 @@ public class ChatSession {
 
     /** Só uma thread dessas no processo inteiro: lê o teclado e manda pra todo mundo. */
     public static void consoleLoop(PeerTable table, String myNickname) {
-        System.out.println("Você é '" + myNickname + "'. Digite uma mensagem e pressione Enter. Digite " + QUIT_COMMAND + " para sair.");
+        System.out.println("Você é '" + myNickname + "'. Digite uma mensagem e pressione Enter.");
+        System.out.println("Comandos: " + LIST_COMMAND + " (participantes), " + QUIT_COMMAND + " (sair).");
         System.out.println();
 
         try {
@@ -47,11 +49,23 @@ public class ChatSession {
                 if (line.equalsIgnoreCase(QUIT_COMMAND)) {
                     break;
                 }
+                if (line.equalsIgnoreCase(LIST_COMMAND)) {
+                    printParticipants(table, myNickname);
+                    continue;
+                }
                 if (!line.isEmpty()) {
                     broadcast(table, line);
                 }
             }
         } catch (IOException ignored) {
+        }
+    }
+
+    private static void printParticipants(PeerTable table, String myNickname) {
+        System.out.println("Participantes:");
+        System.out.println("  - " + myNickname + " (você)");
+        for (PeerConnection peer : table.all()) {
+            System.out.println("  - " + peer.nickname);
         }
     }
 
